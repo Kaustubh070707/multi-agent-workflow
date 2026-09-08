@@ -1,0 +1,2 @@
+{"id": 1, "goal": "Find latest FastAPI release and summarize", "needs_approval": false}
+{"id": 2, "goal": "Query DB for top users then email report", "needs_approval": true}
