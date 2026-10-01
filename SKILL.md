@@ -34,7 +34,8 @@ Components:
 
 # 5. Skills demonstrated
 - [x] Single agent + routing evidence: `app/main.py` `POST /run` — `calc:` goes to exec, everything else to search, every run returns a `trace`
-- [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout), both `{"ok":...}` errors-as-data, never raise
+- [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout, eval-first for expressions), both `{"ok":...}` errors-as-data, never raise
+- [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
 - [ ] Resumable state evidence: checkpoint config (Step 5)
 - [ ] Budgets/circuit breaker evidence: `app/guards.py` exists (`MAX_STEPS 25`, `$0.50`), not wired yet (Step 6)
 - [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
@@ -56,6 +57,10 @@ Components:
    Cause: The snippet was a bare expression — nothing printed, nothing assigned to `result`. My exec path only understood statements.
    Fix: Try `eval` first for single expressions (returns `result = 99`), fall back to `exec` on `SyntaxError`. Bare math now just works.
    Lesson: Agents send expressions, not programs. Meet them where they are.
+3. Symptom: The new summarizer answered `Could not complete '': unknown error` on a perfectly successful exec.
+   Cause: `hand_off` nests work under a `payload` key, but the summarizer read `tool`/`result`/`goal` at the top level. Producer and consumer disagreed on the envelope.
+   Fix: Summarizer unwraps `handoff["payload"]` first (falling back to the dict itself). The handoff test caught it before any demo ran.
+   Lesson: Every agent boundary gets a test asserting the real shape. In multi-agent systems the envelope is the API.
 
 # 8. What I would do differently at 100x scale
 - TBD:

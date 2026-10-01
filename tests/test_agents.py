@@ -28,6 +28,26 @@ def test_run_calc_shape():
     assert "99" in str(body["trace"][0]["output"])
 
 
+def test_handoff_protocol_shape():
+    from app.main import RunRequest, run
+
+    body = run(RunRequest(goal="calc: 12*8+3"))
+    kinds = [t.get("kind", "tool") for t in body["trace"]]
+    assert "handoff" in kinds
+    handoff = next(t for t in body["trace"] if t.get("kind") == "handoff")
+    assert handoff["from"] == "researcher" and handoff["to"] == "summarizer"
+    assert "payload" in handoff
+
+
+def test_summarizer_formats_answer():
+    from app.main import RunRequest, run
+
+    body = run(RunRequest(goal="calc: 6*7"))
+    assert body["status"] == "done"
+    assert "42" in body["answer"]
+    assert body["trace"][-1]["kind"] == "summary"
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from app.agents import hand_off, researcher, summarizer
 from app.tools import exec_tool, search_tool
 
 app = FastAPI(title="Multi-Agent Workflow - D4")
@@ -17,13 +18,14 @@ def health():
 
 @app.post("/run")
 def run(req: RunRequest):
-    # Step 2: route by prefix — calc: goes to exec, everything else to search.
+    # Step 3: researcher works, hands off explicitly, summarizer answers.
     # Errors are data, never raised.
     goal = req.goal.strip()
-    if goal.lower().startswith("calc:"):
-        tool, result = "exec", exec_tool(goal[5:].strip())
-    else:
-        tool, result = "search", search_tool(goal)
+    tool, result = researcher(goal, exec_tool, search_tool)
     trace = [{"tool": tool, "input": goal, "output": result}]
+    handoff = hand_off("researcher", "summarizer", {"tool": tool, "result": result, "goal": goal})
+    trace.append(handoff)
+    summary = summarizer(handoff)
+    trace.append(summary)
     status = "done" if result.get("ok") else "error"
-    return {"goal": req.goal, "status": status, "trace": trace}
+    return {"goal": req.goal, "status": status, "trace": trace, "answer": summary["answer"]}
