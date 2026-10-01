@@ -28,7 +28,7 @@ Components:
 # 4. Key decisions and trade-offs
 | Decision | Options I considered | What I chose | Why | What I gave up |
 |---|---|---|---|---|
-| Orchestrator | LangGraph vs CrewAI vs deterministic rules | Deterministic rules (`app/planner.py`) | Zero deps, zero keys, fully testable; LangGraph stays installed for Step 5+ state machines if cycles get real | Graph expressiveness for cyclic workflows |
+| Orchestrator | LangGraph vs CrewAI vs deterministic rules | Deterministic rules (`app/planner.py`) | Zero deps, zero keys, fully testable; LangGraph/CrewAI were removed from pins as unused (verified zero imports) and return with one pip line if cycles get real | Graph expressiveness for cyclic workflows |
 | Planner | LLM planner vs rule planner | Rules (`calc:` prefix, and/then splitting) | Every plan is reproducible and asserted in tests; an LLM planner would make the 20/20 non-deterministic | Handling open-ended goals |
 | State | Postgres vs in-mem | Postgres + checkpoint | Resume mid-run | Simplicity |
 | Errors | exceptions vs errors-as-data | errors-as-data | Agent can reason | Call-stack fidelity |
