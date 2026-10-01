@@ -1,2 +1,20 @@
-{"id": 1, "goal": "Find latest FastAPI release and summarize", "needs_approval": false}
-{"id": 2, "goal": "Query DB for top users then email report", "needs_approval": true}
+{"id": 1, "goal": "calc: 12*8+3", "needs_approval": false, "expect": "done", "must_contain": "99"}
+{"id": 2, "goal": "calc: result = 6*7", "needs_approval": false, "expect": "done", "must_contain": "42"}
+{"id": 3, "goal": "calc: sum([10, 20, 30])", "needs_approval": false, "expect": "done", "must_contain": "60"}
+{"id": 4, "goal": "calc: round(3.14159, 2)", "needs_approval": false, "expect": "done", "must_contain": "3.14"}
+{"id": 5, "goal": "calc: sorted([3, 1, 2])", "needs_approval": false, "expect": "done", "must_contain": "[1, 2, 3]"}
+{"id": 6, "goal": "calc: import os", "needs_approval": false, "expect": "error", "must_contain": "Could not complete"}
+{"id": 7, "goal": "calc: while True:\n    pass", "needs_approval": false, "expect": "error", "must_contain": "timed out"}
+{"id": 8, "goal": "calc: print('hello')", "needs_approval": false, "expect": "done", "must_contain": "hello"}
+{"id": 9, "goal": "Find latest FastAPI release and summarize", "needs_approval": false, "expect": "done_or_error", "must_contain": ""}
+{"id": 10, "goal": "What is the capital of France?", "needs_approval": false, "expect": "done_or_error", "must_contain": ""}
+{"id": 11, "goal": "Query DB for top users then email report", "needs_approval": true, "expect": "awaiting_approval", "must_contain": ""}
+{"id": 12, "goal": "send email report to team", "needs_approval": true, "expect": "awaiting_approval", "must_contain": ""}
+{"id": 13, "goal": "delete old records", "needs_approval": true, "expect": "awaiting_approval", "must_contain": ""}
+{"id": 14, "goal": "publish the summary", "needs_approval": true, "expect": "awaiting_approval", "must_contain": ""}
+{"id": 15, "goal": "calc: 2+2 and then summarize", "needs_approval": false, "expect": "done", "must_contain": "4"}
+{"id": 16, "goal": "calc: len('hello world')", "needs_approval": false, "expect": "done", "must_contain": "11"}
+{"id": 17, "goal": "calc: max([5, 9, 3])", "needs_approval": false, "expect": "done", "must_contain": "9"}
+{"id": 18, "goal": "calc: 2**10", "needs_approval": false, "expect": "done", "must_contain": "1024"}
+{"id": 19, "goal": "calc: 'abc'.upper()", "needs_approval": false, "expect": "done", "must_contain": "ABC"}
+{"id": 20, "goal": "pay the invoice now", "needs_approval": true, "expect": "awaiting_approval", "must_contain": ""}

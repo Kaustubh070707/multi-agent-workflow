@@ -163,6 +163,14 @@ def test_approve_resumes_run(tmp_path, monkeypatch):
     assert bad.status_code in (403, 404)
 
 
+def test_researcher_follows_plan_first_step():
+    from app.main import RunRequest, run
+
+    body = run(RunRequest(goal="calc: 2+2 and then summarize"))
+    assert body["status"] == "done"
+    assert "4" in body["answer"]
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 

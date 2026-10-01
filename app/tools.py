@@ -1,7 +1,5 @@
 import concurrent.futures
-import io
 import threading
-from contextlib import redirect_stdout
 
 from ddgs import DDGS
 
@@ -48,18 +46,25 @@ _SAFE_BUILTINS = {
 def _exec_code(code: str) -> str:
     if len(code) > EXEC_MAX_CHARS:
         raise ValueError(f"code too long ({len(code)} > {EXEC_MAX_CHARS} chars)")
-    buf = io.StringIO()
-    env = {"__builtins__": _SAFE_BUILTINS}
+    # NOTE: never redirect_stdout here — it swaps sys.stdout process-wide, so a
+    # snippet that never returns (infinite loop on a daemon thread) would swallow
+    # every later print in the process. Print is collected per-call instead.
+    lines: list[str] = []
+
+    def _collect(*args):
+        lines.append(" ".join(str(a) for a in args))
+
+    builtins = dict(_SAFE_BUILTINS)
+    builtins["print"] = _collect
+    env = {"__builtins__": builtins}
     try:
         value = eval(compile(code, "<agent>", "eval"), env)
-        printed = buf.getvalue().strip()
-        out = (printed + "\n" if printed else "") + f"result = {value!r}"
+        out = f"result = {value!r}"
         return out
     except SyntaxError:
         pass
-    with redirect_stdout(buf):
-        exec(compile(code, "<agent>", "exec"), env)  # noqa: S102 - sandboxed builtins, timeout-guarded, agent tool by design
-    out = buf.getvalue().strip()
+    exec(compile(code, "<agent>", "exec"), env)  # noqa: S102 - sandboxed builtins, timeout-guarded, agent tool by design
+    out = "\n".join(lines).strip()
     if "result" in env:
         out = (out + "\n" if out else "") + f"result = {env['result']!r}"
     return out or "(no output)"

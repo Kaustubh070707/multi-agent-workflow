@@ -2,11 +2,15 @@
 
 
 def researcher(goal: str, exec_tool, search_tool) -> tuple[str, dict]:
-    """Owns the tools. Returns (tool_name, result). Never raises."""
+    """Owns the tools. Follows the first planned step, not the raw goal. Never raises."""
+    from app.planner import plan
+
     clean = goal.strip()
-    if clean.lower().startswith("calc:"):
-        return "exec", exec_tool(clean[5:].strip())
-    return "search", search_tool(clean)
+    steps = plan(goal)
+    first = steps[0] if steps else {"tool": "search", "input": clean}
+    if first["tool"] == "exec":
+        return "exec", exec_tool(first["input"])
+    return "search", search_tool(first["input"] if first["tool"] == "search" else clean)
 
 
 def hand_off(from_agent: str, to_agent: str, payload: dict) -> dict:

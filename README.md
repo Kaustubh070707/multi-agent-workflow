@@ -22,11 +22,15 @@ uvicorn app.main:app --reload
 ```
 
 ## Eval
-`eval/scenarios.jsonl` - 20 tasks. Most valuable part is the results table in README.
+`eval/scenarios.jsonl` - 20 tasks (`python eval/run_eval.py`). Most valuable part is the results table:
 
-| Scenario | Success | Cost | Steps |
-|---|---|---|---|
-| TBD | | | |
+| Result | Count | Notes |
+|---|---|---|
+| **HIT 20/20 (100%)** | avg cost $0.0072/run, avg 1.1 tool steps | target was 85% |
+| calc (12) | 10 done, 2 correctly errored | `import os` blocked by sandbox, `while True` timed out in 5s |
+| live search (2) | handled as errors here | DDG unreachable from this sandbox; `done_or_error` by design, resumed as done where network works |
+| approval (5) | 5 gated, 5 resumed after approve | zero tool calls before human approval, bad tokens 403 |
+| multi-step plan (1) | done | `calc: 2+2 and then summarize` follows plan step one |
 
 ## Gate
 1. Same tool loop - how stopped?

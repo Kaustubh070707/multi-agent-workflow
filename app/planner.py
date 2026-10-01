@@ -5,12 +5,18 @@ Logged BEFORE any tool runs, so every trace opens with intent, not action.
 import re
 
 
-def _split_parts(goal: str) -> list[str]:
+def _split_parts(goal: str, code: bool = False) -> list[str]:
     clean = goal.strip()
     if not clean:
         return []
-    body = clean[5:].strip() if clean.lower().startswith("calc:") else clean
-    parts = re.split(r"\s+(?:and then|then|and|;)\s+|\n+", body, flags=re.IGNORECASE)
+    if code:
+        # Code keeps its newlines — only "and then"/";" split steps, never line breaks.
+        # Called with the calc: prefix already stripped by plan().
+        parts = re.split(r"\s+(?:and then|then|and|;)\s+", clean, flags=re.IGNORECASE)
+        return [p.strip() for p in parts if p.strip()]
+    if clean.lower().startswith("calc:"):
+        return _split_parts(clean[5:].strip(), code=True)
+    parts = re.split(r"\s+(?:and then|then|and|;)\s+|\n+", clean, flags=re.IGNORECASE)
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -21,7 +27,7 @@ def plan(goal: str) -> list[dict]:
         return [{"agent": "researcher", "tool": "search", "input": ""}]
     if clean.lower().startswith("calc:"):
         rest = clean[5:].strip()
-        steps = _split_parts(rest)
+        steps = _split_parts(rest, code=True)
         if len(steps) <= 1:
             return [{"agent": "researcher", "tool": "exec", "input": rest}]
         return [

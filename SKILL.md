@@ -9,7 +9,7 @@ live:
 ---
 # 1. What this project is
 Non-technical: Several specialised AI helpers that plan, use tools, and finish a multi-step job safely with approval.
-Engineer: LangGraph planner-worker system with typed tools, persisted resumable state, budgets, guards, full trace log.
+Engineer: Planner-worker system (deterministic rule planner, LangGraph not needed yet) with typed tools, file-persisted resumable state, budgets, guards, full trace log.
 
 # 2. Problem it solves
 Completes multi-step tasks (search + DB + API + code exec) reliably, failing safely instead of looping or overspending.
@@ -28,7 +28,8 @@ Components:
 # 4. Key decisions and trade-offs
 | Decision | Options I considered | What I chose | Why | What I gave up |
 |---|---|---|---|---|
-| Orchestrator | LangGraph vs CrewAI | LangGraph TBD | State + cycles explicit | CrewAI speed |
+| Orchestrator | LangGraph vs CrewAI vs deterministic rules | Deterministic rules (`app/planner.py`) | Zero deps, zero keys, fully testable; LangGraph stays installed for Step 5+ state machines if cycles get real | Graph expressiveness for cyclic workflows |
+| Planner | LLM planner vs rule planner | Rules (`calc:` prefix, and/then splitting) | Every plan is reproducible and asserted in tests; an LLM planner would make the 20/20 non-deterministic | Handling open-ended goals |
 | State | Postgres vs in-mem | Postgres + checkpoint | Resume mid-run | Simplicity |
 | Errors | exceptions vs errors-as-data | errors-as-data | Agent can reason | Call-stack fidelity |
 
@@ -45,7 +46,9 @@ Components:
 # 6. Numbers I measured
 | Metric | Before | After | How I measured it |
 |---|---|---|---|
-| success rate 20 scenarios | TBD | 85% target | scenario suite |
+| success rate 20 scenarios | — | 20/20 (100%) on first full run | `python eval/run_eval.py`: 12 calc, 2 live-search (error-handled offline), 5 approval-gated, 1 multi-step |
+| avg cost/run | — | $0.0072 | cost ledger in trace (`COST_PER_SEARCH 0.01`, `COST_PER_EXEC 0.001` placeholder pricing) |
+| avg steps/run | — | 1.1 tool calls | counted from trace entries |
 | avg cost/run | TBD | TBD | token counter |
 | avg steps/run | TBD | TBD | trace log |
 
@@ -65,6 +68,14 @@ Components:
 5. Symptom: The guard test reported `cost budget reached ($0.03 >= $0.50)` — a budget trip that never happened.
    Cause: `from app.guards import MAX_STEPS` binds the value at import time. The test patched `guards.MAX_STEPS` to 3, `should_stop` saw 3 and tripped correctly, but my reason-string check still read the stale 25 and blamed cost.
    Fix: Read `guards.MAX_STEPS` live at check time. Same rule as the daemon threads: shared mutable config must be read, not copied.
+7. Symptom: The 20-scenario eval printed nothing and exited 0 — three runs in a row, no error, no output.
+   Cause: `redirect_stdout` swaps `sys.stdout` for the whole process. The `while True` scenario's daemon thread never leaves its `with` block, so every later `print` in the process flowed into its dead buffer. The eval was actually running fine underneath.
+   Fix: Print is now collected per call (a local list injected as the sandbox `print`), never a global redirect. Verified: same eval immediately printed 20/20.
+   Lesson: Never mutate process-global state from inside code that can outlive its caller. Thread-local collection instead of global redirection, always.
+8. Symptom: The planner split `while True:\n pass` into two steps (`while True:` + `pass`), decapitating the code.
+   Cause: I fixed newline-splitting in `_split_parts` but `plan()` strips the `calc:` prefix before calling it, so multi-line code fell into the generic branch that still splits newlines. Fixed the wrong door.
+   Fix: `_split_parts` takes a `code=True` flag; `plan()` passes it for calc goals. Verified with a real-newline reproduction (shell quoting had hidden the bug twice).
+   Lesson: Test with real newlines from a file, not shell `-c` strings — PowerShell mangles `\n` into literals and the repro lies to you.
    Lesson: `from x import NAME` freezes values. Anything tests need to move — limits, flags, prices — must be read off the module each time.
 6. Decision, not a bug: the approval token *is* the pending run_id.
    Cause: A separate token store would be a second source of truth to keep in sync. The run_id is already unguessable hex, already persisted, already unique.
