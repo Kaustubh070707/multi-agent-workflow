@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from app import graph
+from app import graph, state
 from app.planner import plan_entry
 from app.store import load_run, save_run
 
@@ -53,9 +53,20 @@ def run(req: RunRequest):
         pending["approval_token"] = pending["run_id"]
         save_run(pending)
         return pending
+    hit = state.cache_get(goal)
+    if hit is not None:
+        # Fresh identity per request: the cached answer is reused, but this
+        # run gets its own id and its own persisted record.
+        replay = {k: v for k, v in hit.items() if k != "run_id"}
+        replay["run_id"] = save_run(replay)
+        return replay
     body = _execute(goal)
     body["goal"] = req.goal
     body["run_id"] = save_run(body)
+    if body.get("status") == "done":
+        # Errors and gated/stopped runs are never cached: failures are
+        # transient (retry next time), approvals must stay human-gated.
+        state.cache_put(goal, body)
     return body
 
 

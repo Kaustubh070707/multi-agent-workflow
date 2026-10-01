@@ -15,6 +15,8 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6380/0")
 
 _mem_cost: dict[str, float] = {}
 _probed: dict[str, bool] = {}
+_mem_cache: dict[str, tuple[float, dict]] = {}
+CACHE_TTL = 300.0
 
 
 def _tcp_ok(url: str, timeout: float = 1.0) -> bool:
@@ -114,3 +116,43 @@ def total_cost(run_id: str) -> float:
         except Exception:  # noqa: BLE001 - fallback-by-design
             _probed["redis"] = False
     return _mem_cost.get(run_id, 0.0)
+
+
+def _cache_key(goal: str) -> str:
+    import hashlib
+
+    return "cache:" + hashlib.sha256(goal.strip().lower().encode()).hexdigest()[:32]
+
+
+def cache_get(goal: str) -> dict | None:
+    """Repeat-query cache. Only done bodies are ever stored (see cache_put)."""
+    import time
+
+    key = _cache_key(goal)
+    if _redis_ok():
+        try:
+            raw = _redis_client().get(key)
+            if raw is not None:
+                return json.loads(raw)
+        except Exception:  # noqa: BLE001 - fallback-by-design
+            _probed["redis"] = False
+    hit = _mem_cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_TTL:
+        return hit[1]
+    return None
+
+
+def cache_put(goal: str, body: dict) -> None:
+    import time
+
+    key = _cache_key(goal)
+    payload = json.dumps(body, default=str)
+    if _redis_ok():
+        try:
+            _redis_client().setex(key, int(CACHE_TTL), payload)
+            return
+        except Exception:  # noqa: BLE001 - fallback-by-design
+            _probed["redis"] = False
+    if len(_mem_cache) > 500:
+        _mem_cache.clear()
+    _mem_cache[key] = (time.time(), body)

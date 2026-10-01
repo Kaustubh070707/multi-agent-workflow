@@ -1,8 +1,24 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cache(monkeypatch):
+    """Suite runs offline: memory cache cleared per test, Redis never touched.
+
+    Live Redis is proven by manual probe (SKILL.md), not by the suite —
+    shared infra would let tests pollute each other, as incident #11 showed.
+    """
+    from app import state
+
+    monkeypatch.setattr(state, "_redis_ok", lambda: False)
+    state._mem_cache.clear()
+    yield
+    state._mem_cache.clear()
 
 
 def test_health():
@@ -235,6 +251,44 @@ def test_mcp_prefix_routes_to_mcp_tool():
     steps = plan("mcp: 6*7")
     assert steps[0]["tool"] == "mcp_calc"
     assert steps[0]["input"] == "6*7"
+
+
+def test_repeat_query_served_from_cache(tmp_path, monkeypatch):
+    from app import state, store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(state, "_pg_ok", lambda: False)
+    monkeypatch.setattr(state, "_redis_ok", lambda: False)
+    from app import main
+
+    calls = []
+    monkeypatch.setitem(main.graph.TOOLS, "exec",
+                        lambda code: calls.append(code) or {"ok": True, "data": "result = 4"})
+    first = main.run(main.RunRequest(goal="calc: 2+2"))
+    second = main.run(main.RunRequest(goal="calc: 2+2"))
+    assert first["status"] == "done" and second["status"] == "done"
+    assert len(calls) == 1
+    assert second["answer"] == first["answer"]
+
+
+def test_errors_and_gated_goals_not_cached(tmp_path, monkeypatch):
+    from app import state, store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(state, "_pg_ok", lambda: False)
+    monkeypatch.setattr(state, "_redis_ok", lambda: False)
+    from app import main
+
+    n = {"count": 0}
+
+    def flaky(_code):
+        n["count"] += 1
+        return {"ok": False, "error": "down"}
+
+    monkeypatch.setitem(main.graph.TOOLS, "exec", flaky)
+    main.run(main.RunRequest(goal="calc: 1+1"))
+    main.run(main.RunRequest(goal="calc: 1+1"))
+    assert n["count"] == 6  # 3 retries each run, errors never cached
 
 
 def test_exec_errors_are_data():

@@ -52,6 +52,7 @@ Components:
 | success rate 20 scenarios | — | 20/20 (100%) on first full run | `python eval/run_eval.py`: 12 calc, 2 live-search (error-handled offline), 5 approval-gated, 1 multi-step |
 | avg cost/run | — | $0.0072 | cost ledger in trace (`COST_PER_SEARCH 0.01`, `COST_PER_EXEC 0.001` placeholder pricing) |
 | avg steps/run | — | 1.1 tool calls | counted from trace entries |
+| repeat-query cache | uncached (every repeat re-ran tools) | cached `done` replays same answer, 1 tool call for 2 identical runs; errors/gated/stopped never cached; replay mints a fresh `run_id` | `test_repeat_query_served_from_cache`, `test_errors_and_gated_goals_not_cached`; Redis SETEX 300s live, memory TTL offline |
 | avg cost/run | TBD | TBD | token counter |
 | avg steps/run | TBD | TBD | trace log |
 
@@ -96,6 +97,10 @@ Components:
     Cause: `act_node` called `researcher(goal, exec_tool, search_tool)` with module imports; TOOLS existed only as decoration. Patches proved nothing.
     Fix: `act_node` now reads `TOOLS[...]` entries, so `setitem` patches genuinely steer the flow. Verified by watching the tests fail before the fix and pass after.
     Lesson: A patch surface the code doesn't read is a lie the suite tells itself. After writing a seam, prove it steers.
+11. Symptom: `GET /run/{id}` returned 404 right after a 200 POST — same test, same tmp dir, green for weeks.
+    Cause: Two coupled bugs. First, the suite shares one cache (memory dict plus dev Redis) across tests with no isolation, so an earlier cache test's `done` body leaked into this test. Second, cached hits reused the original `run_id`, pointing GET at another test's deleted tmp dir.
+    Fix: Cached replays get a fresh `run_id` and their own persisted record; suite runs offline via an autouse fixture (memory cache cleared per test, Redis never touched — live Redis stays a manual probe, stated in the fixture). Stale-run staleness is now impossible by construction.
+    Lesson: Shared mutable infrastructure (caches, IDs) must be namespaced or cleared per test. A cache that returns someone else's identity is worse than a miss.
 
 # 8. What I would do differently at 100x scale
 - Replace the rule planner with an LLM planner behind the same `plan()` shape, keeping deterministic eval as the regression gate so the 20/20 stays meaningful.
