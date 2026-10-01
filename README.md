@@ -1,41 +1,57 @@
-# D4 Multi-Agent AI Workflow with Tool Calling
+# Multi-Agent AI Workflow
 
-> Track D / Advanced / 4 weeks. Planner-worker agents with real tools, safe failure, eval.
+Planner-worker agents with real tools, safe failure modes, and measured eval — every run traced, every failure a shaped response instead of a crash.
 
-## Build order (do in order)
-1. Single agent + 1 tool. Reliable first.
-2. Typed schemas, errors-as-data (never hidden exceptions).
-3. 2nd agent + explicit handoff protocol.
-4. Planner, log plan before exec.
-5. Persistence (survives restart mid-run).
-6. Break on purpose: fail tool, force loop, exceed budget. Add guards.
-7. Human approval gate for destructive/costly ops.
-8. Run 20 scenarios, publish success/cost/steps table.
+## Try it
 
-## Run
 ```bash
 pip install -r requirements-dev.txt
-cp .env.example .env
-ruff check app/ tests/ eval/ && pytest -q   # 15 passed
 uvicorn app.main:app --reload
 # POST /run {"goal": "calc: 12*8+3"} -> done with 99 + run_id
-# GET /run/{id} replays from disk (survives restart)
-# POST /approve {"approval_token": "<run_id>"} resumes gated goals (send/email/delete/publish/pay)
-# python eval/run_eval.py -> 20/20 (95% target beaten), avg $0.0072/run
+# GET /run/{id} replays the run from disk (survives restart)
+# POST /approve {"approval_token": "<run_id>"} resumes gated goals
 ```
 
-## Eval
-`eval/scenarios.jsonl` - 20 tasks (`python eval/run_eval.py`). Most valuable part is the results table:
+Goals starting `calc:` run sandboxed Python; everything else searches the web. Goals with irreversible words (`send`, `email`, `delete`, `publish`, `pay`) wait for human approval with zero tool calls first.
 
-| Result | Count | Notes |
-|---|---|---|
-| **HIT 20/20 (100%)** | avg cost $0.0072/run, avg 1.1 tool steps | target was 85% |
-| calc (12) | 10 done, 2 correctly errored | `import os` blocked by sandbox, `while True` timed out in 5s |
-| live search (2) | handled as errors here | DDG unreachable from this sandbox; `done_or_error` by design, resumed as done where network works |
-| approval (5) | 5 gated, 5 resumed after approve | zero tool calls before human approval, bad tokens 403 |
-| multi-step plan (1) | done | `calc: 2+2 and then summarize` follows plan step one |
+## Architecture
 
-## Gate
-1. Same tool loop - how stopped?
-2. Garbage tool output - does agent notice?
-3. Cost cap for runaway?
+```
+[goal] -> [planner: ordered steps, logged first] -> [researcher: tools] -> [handoff] -> [summarizer: answer]
+                guards (step limit 25, $0.50 budget, 3 retries) watch every attempt
+                runs persist to runs/{id}.json — GET /run/{id} replays after restart
+```
+
+- Typed tools, errors-as-data: `search_tool` (web, 5s timeout) and `exec_tool` (sandboxed builtins, 5s daemon-thread timeout) return `{"ok":...}`, never raise.
+- Explicit handoff envelope between agents; planner is deterministic rules (no LLM, fully reproducible).
+- Cost ledger per attempt; loop and budget trips recorded in-trace with reasons.
+
+## Results (20 scenarios, `python eval/run_eval.py`)
+
+| Result | Detail |
+|---|---|
+| **20/20 (100%)** | avg $0.0072/run, 1.1 tool steps (target was 85%) |
+| calc (12) | 10 done, 2 correctly errored (`import` blocked, infinite loop timed out) |
+| live search (2) | error-handled offline by design; succeed where network works |
+| approval (5) | gated pre-execution, resumed after approve, bad tokens rejected |
+| multi-step plan (1) | plan steps drive the worker, not the raw goal string |
+
+## Repo layout
+
+```
+app/agents.py       researcher, handoff, summarizer
+app/planner.py      deterministic plan-first decomposition
+app/tools.py        search + exec tools (timeouts, sandbox)
+app/guards.py       step/budget limits
+app/store.py        file run store + resume endpoint
+eval/scenarios.jsonl  20 tasks
+tests/              15 tests (contract shapes, guards, gates, persistence)
+SKILL.md            engineering log — decisions, numbers, failures
+```
+
+## Limitations (honest)
+
+- Planner is rules, not an LLM — open-ended goals get keyword routing, not reasoning. LangGraph is installed for the day workflows need real cycles.
+- State is files, not Postgres/Redis — resume contract proven, zero infra.
+- Pricing is placeholder ($0.01/search) until real LLM billing plugs in.
+- Web search needs network; the sandbox here times out, so live-search scenarios assert safe handling, not live answers.

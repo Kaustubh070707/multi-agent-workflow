@@ -6,3 +6,5 @@ __pycache__/
 runs/
 # stray eval logs
 eval/*.txt
+# private build log - local only, never public
+README.dev.md
