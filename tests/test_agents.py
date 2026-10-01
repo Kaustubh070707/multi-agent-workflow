@@ -213,6 +213,30 @@ def test_graph_checkpointer_persists():
     assert len(checkpoints) >= 2
 
 
+def test_mcp_server_lists_calc_tool():
+    from app.mcp_server import mcp
+
+    names = [t.name for t in mcp._tool_manager.list_tools()]
+    assert "calc" in names
+
+
+def test_mcp_calc_tool_roundtrip():
+    from app.mcp_client import mcp_calc_tool
+
+    ok = mcp_calc_tool("6*7")
+    assert ok["ok"] is True and "42" in str(ok.get("data"))
+    bad = mcp_calc_tool("import os")
+    assert bad["ok"] is False and bad["error"]
+
+
+def test_mcp_prefix_routes_to_mcp_tool():
+    from app.planner import plan
+
+    steps = plan("mcp: 6*7")
+    assert steps[0]["tool"] == "mcp_calc"
+    assert steps[0]["input"] == "6*7"
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 

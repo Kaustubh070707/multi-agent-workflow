@@ -25,7 +25,10 @@ def plan(goal: str) -> list[dict]:
     clean = goal.strip()
     if not clean:
         return [{"agent": "researcher", "tool": "search", "input": ""}]
-    if clean.lower().startswith("calc:"):
+    lowered = clean.lower()
+    if lowered.startswith("mcp:"):
+        return [{"agent": "researcher", "tool": "mcp_calc", "input": clean[4:].strip()}]
+    if lowered.startswith("calc:"):
         rest = clean[5:].strip()
         steps = _split_parts(rest, code=True)
         if len(steps) <= 1:

@@ -1,7 +1,7 @@
 """Two agents, one explicit handoff. No LLM — deterministic and offline-safe."""
 
 
-def researcher(goal: str, exec_tool, search_tool) -> tuple[str, dict]:
+def researcher(goal: str, exec_tool, search_tool, mcp_calc_tool=None) -> tuple[str, dict]:
     """Owns the tools. Follows the first planned step, not the raw goal. Never raises."""
     from app.planner import plan
 
@@ -10,6 +10,12 @@ def researcher(goal: str, exec_tool, search_tool) -> tuple[str, dict]:
     first = steps[0] if steps else {"tool": "search", "input": clean}
     if first["tool"] == "exec":
         return "exec", exec_tool(first["input"])
+    if first["tool"] == "mcp_calc":
+        if mcp_calc_tool is None:
+            from app.mcp_client import mcp_calc_tool as _mcp
+
+            mcp_calc_tool = _mcp
+        return "mcp_calc", mcp_calc_tool(first["input"])
     return "search", search_tool(first["input"] if first["tool"] == "search" else clean)
 
 

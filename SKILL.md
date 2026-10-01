@@ -28,7 +28,9 @@ Components:
 # 4. Key decisions and trade-offs
 | Decision | Options I considered | What I chose | Why | What I gave up |
 |---|---|---|---|---|
-| Orchestrator | LangGraph vs CrewAI vs deterministic rules | Deterministic rules (`app/planner.py`) | Zero deps, zero keys, fully testable; LangGraph/CrewAI were removed from pins as unused (verified zero imports) and return with one pip line if cycles get real | Graph expressiveness for cyclic workflows |
+| Orchestrator | LangGraph vs CrewAI vs deterministic rules | LangGraph graph (`app/graph.py`) over deterministic rule planner | Retries are a real graph cycle (act routes back to act), checkpoints persist per thread; the planner stays rules so the 20/20 reproduces. Gave up pure-simplicity: graph adds nodes/edges/checkpointer concepts. |
+| Tool transport | In-process calls vs MCP stdio | Both: local `exec`/`search` fast path plus `mcp:` prefix routed to `mcp_calc_tool` via bundled `app/mcp_server.py` | MCP proves tool-calling over a protocol boundary (server/client, timeouts, `isError`); local path stays for speed. Gave up per-call subprocess cost on the MCP path (~1-2s spawn). |
+| State | Files only vs Postgres+Redis | Postgres `runs` table + Redis cost ledger with file/memory fallback (`app/state.py`, `docker-compose.yml`) | Infra upgrades durability without gating correctness: `backend()` reports `postgres+redis` live, `file` otherwise; tests force fallback. Gave up single-backend simplicity. |
 | Planner | LLM planner vs rule planner | Rules (`calc:` prefix, and/then splitting) | Every plan is reproducible and asserted in tests; an LLM planner would make the 20/20 non-deterministic | Handling open-ended goals |
 | State | Postgres vs in-mem | Postgres + checkpoint | Resume mid-run | Simplicity |
 | Errors | exceptions vs errors-as-data | errors-as-data | Agent can reason | Call-stack fidelity |
@@ -36,6 +38,7 @@ Components:
 # 5. Skills demonstrated
 - [x] Single agent + routing evidence: `app/main.py` `POST /run` — `calc:` goes to exec, everything else to search, every run returns a `trace`
 - [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout, eval-first for expressions), both `{"ok":...}` errors-as-data, never raise
+- [x] MCP transport evidence: `app/mcp_server.py` (FastMCP stdio `calc`, same sandbox) + `app/mcp_client.py` (timeout, `isError` honored) — `mcp:` goals route through it; priced as search
 - [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
 - [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
 - [x] Resumable state evidence: `app/store.py` (file) + `app/state.py` (Postgres `runs` table + Redis cost ledger, file/memory fallback) — live `docker-compose.yml:1` verified `postgres+redis` round-trip; `runs/` ignored
@@ -85,11 +88,19 @@ Components:
    Cause: The trace contract grew a head. Plan entries sit first now, so `trace[0]` is intent, not action. The tests assumed positions instead of roles.
    Fix: Old shape tests now assert `trace[0]` is the plan and `trace[1]` is the first tool. New tests pin the planner: calc plans one exec step, search plans search+summarize, `and then` splits.
    Lesson: When the trace gains a stage, update shape tests to name stages by kind, not index. Positions shift; roles don't.
+9. Symptom: `mcp: import os` came back `ok: True` with a traceback as the "data".
+   Cause: MCP delivers tool failures as result content flagged `isError`, not as exceptions. My client collected text and ignored the flag — a traceback counted as success.
+   Fix: Honor `isError`: error-flagged content returns `{"ok": False, ...}`. Same errors-as-data contract, one layer deeper.
+   Lesson: Every transport boundary re-hides errors in a new shape. Assert the failure path per transport, not just per tool.
+10. Symptom: Tests patched `graph.TOOLS` and went green — while the flow ignored the dict and used import-bound names.
+    Cause: `act_node` called `researcher(goal, exec_tool, search_tool)` with module imports; TOOLS existed only as decoration. Patches proved nothing.
+    Fix: `act_node` now reads `TOOLS[...]` entries, so `setitem` patches genuinely steer the flow. Verified by watching the tests fail before the fix and pass after.
+    Lesson: A patch surface the code doesn't read is a lie the suite tells itself. After writing a seam, prove it steers.
 
 # 8. What I would do differently at 100x scale
-- TBD:
-- TBD:
-- TBD:
+- Replace the rule planner with an LLM planner behind the same `plan()` shape, keeping deterministic eval as the regression gate so the 20/20 stays meaningful.
+- Move exec off threads into real sandboxes (gVisor/Firecracker per call) and Postgres LISTEN/NOTIFY instead of file polling, because daemon threads and file stores don't survive real multi-tenancy.
+- Sign tool results and pin MCP server versions — today any local process can pose as `app.mcp_server`, which is fine for a demo and unacceptable at scale.
 
 # 9. Interview answers I have rehearsed
 Q: Agent stuck calling same tool repeatedly - how do you stop it?
