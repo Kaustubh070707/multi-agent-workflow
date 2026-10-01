@@ -33,12 +33,12 @@ Components:
 | Errors | exceptions vs errors-as-data | errors-as-data | Agent can reason | Call-stack fidelity |
 
 # 5. Skills demonstrated
-- [ ] Agent orchestration evidence: `app/graph.py`
-- [ ] Typed tool-calling evidence: `app/tools.py`
-- [ ] Resumable state evidence: checkpoint config
-- [ ] Budgets/circuit breaker evidence: `app/guards.py`
-- [ ] Human-in-loop evidence: approval gate endpoint
-- [ ] Eval + tracing evidence: `eval/scenarios.jsonl` + trace log
+- [x] Single agent + routing evidence: `app/main.py` `POST /run` — `calc:` goes to exec, everything else to search, every run returns a `trace`
+- [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout), both `{"ok":...}` errors-as-data, never raise
+- [ ] Resumable state evidence: checkpoint config (Step 5)
+- [ ] Budgets/circuit breaker evidence: `app/guards.py` exists (`MAX_STEPS 25`, `$0.50`), not wired yet (Step 6)
+- [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
+- [ ] Eval + tracing evidence: `eval/scenarios.jsonl` 2 samples, 20-scenario table pending (Step 8)
 
 # 6. Numbers I measured
 | Metric | Before | After | How I measured it |
@@ -48,10 +48,14 @@ Components:
 | avg steps/run | TBD | TBD | trace log |
 
 # 7. Things that broke and how I fixed them
-1. Symptom:
-   Cause:
-   Fix:
-   Lesson:
+1. Symptom: `pytest` hung forever and never printed a summary — had to kill the terminal.
+   Cause: The `while True` timeout test spun forever inside a non-daemon pool thread, and Python joins non-daemon threads at exit. The test proved the timeout but murdered the runner.
+   Fix: Timeout now runs the snippet in a `threading.Thread(daemon=True)` (`_call_with_timeout` in `app/tools.py`). Daemon threads die with the process, so a hung snippet costs 5 seconds, not the whole run.
+   Lesson: Any code that can loop forever must run on a thread the process is allowed to abandon. Timeouts guard results; daemon threads guard exits.
+2. Symptom: `calc: 12*8+3` returned `(no output)` instead of 99.
+   Cause: The snippet was a bare expression — nothing printed, nothing assigned to `result`. My exec path only understood statements.
+   Fix: Try `eval` first for single expressions (returns `result = 99`), fall back to `exec` on `SyntaxError`. Bare math now just works.
+   Lesson: Agents send expressions, not programs. Meet them where they are.
 
 # 8. What I would do differently at 100x scale
 - TBD:

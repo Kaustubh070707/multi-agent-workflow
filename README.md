@@ -14,9 +14,11 @@
 
 ## Run
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
+ruff check app/ && pytest -q
 uvicorn app.main:app --reload
+# POST /run {"goal": "calc: 12*8+3"} -> done with 99; search goals call the web tool
 ```
 
 ## Eval
