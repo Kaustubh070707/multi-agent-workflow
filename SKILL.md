@@ -9,7 +9,7 @@ live:
 ---
 # 1. What this project is
 Non-technical: Several specialised AI helpers that plan, use tools, and finish a multi-step job safely with approval.
-Engineer: Planner-worker system (deterministic rule planner, LangGraph not needed yet) with typed tools, file-persisted resumable state, budgets, guards, full trace log.
+Engineer: LangGraph planner-worker graph (plan -> act retry-cycle -> summarize, Postgres or memory checkpoint) with typed tools, file+Postgres resumable state, Redis cost ledger, budgets, guards, full trace log. Deterministic rule planner (no LLM) keeps the 20/20 reproducible.
 
 # 2. Problem it solves
 Completes multi-step tasks (search + DB + API + code exec) reliably, failing safely instead of looping or overspending.

@@ -101,11 +101,11 @@ def test_get_run_endpoint(tmp_path, monkeypatch):
 
 
 def test_guard_stops_error_loop(monkeypatch):
-    from app import guards, main
+    from app import graph, guards, main
 
     monkeypatch.setattr(guards, "MAX_STEPS", 3)
-    monkeypatch.setattr(main, "MAX_RETRIES", 10)
-    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": False, "error": "down"})
+    monkeypatch.setattr(guards, "MAX_RETRIES", 10)
+    monkeypatch.setitem(graph.TOOLS, "search", lambda q: {"ok": False, "error": "down"})
 
     body = main.run(main.RunRequest(goal="Find something"))
     assert body["status"] == "stopped"
@@ -116,10 +116,10 @@ def test_guard_stops_error_loop(monkeypatch):
 
 
 def test_budget_stops_run(monkeypatch):
-    from app import main
+    from app import graph, guards, main
 
-    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": False, "error": "down"})
-    monkeypatch.setattr(main, "COST_PER_SEARCH", 10.0)
+    monkeypatch.setitem(graph.TOOLS, "search", lambda q: {"ok": False, "error": "down"})
+    monkeypatch.setattr(guards, "COST_PER_SEARCH", 10.0)
     body = main.run(main.RunRequest(goal="Find something"))
     assert body["status"] == "stopped"
     guard_reasons = [t.get("reason", "") for t in body["trace"] if t.get("kind") == "guard"]
@@ -132,11 +132,11 @@ def test_approval_blocks_tool(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
     from fastapi.testclient import TestClient
 
-    from app import main
+    from app import graph
     from app.main import app
 
     calls = []
-    monkeypatch.setattr(main, "search_tool", lambda q: calls.append(q) or {"ok": True, "data": []})
+    monkeypatch.setitem(graph.TOOLS, "search", lambda q: calls.append(q) or {"ok": True, "data": []})
     c = TestClient(app)
     body = c.post("/run", json={"goal": "send email report to team"}).json()
     assert body["status"] == "awaiting_approval"
@@ -150,10 +150,10 @@ def test_approve_resumes_run(tmp_path, monkeypatch):
     monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
     from fastapi.testclient import TestClient
 
-    from app import main
+    from app import graph
     from app.main import app
 
-    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": True, "data": [{"title": "t"}]})
+    monkeypatch.setitem(graph.TOOLS, "search", lambda q: {"ok": True, "data": [{"title": "t"}]})
     c = TestClient(app)
     pending = c.post("/run", json={"goal": "send email report to team"}).json()
     done = c.post("/approve", json={"approval_token": pending["approval_token"]}).json()
@@ -187,6 +187,30 @@ def test_state_falls_back_without_infra(monkeypatch):
     assert state.load(rid)["status"] == "done"
     state.record_cost(rid, 0.01)
     assert state.total_cost(rid) >= 0.01
+
+
+def test_graph_returns_same_shapes():
+    from app.graph import run_graph
+
+    body = run_graph("calc: 6*7")
+    assert body["status"] == "done"
+    assert body["trace"][0].get("kind") == "plan"
+    assert "42" in body["answer"]
+    assert any(t.get("kind") == "handoff" for t in body["trace"])
+
+
+def test_graph_checkpointer_persists():
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.graph import run_graph
+
+    shared = MemorySaver()
+    first = run_graph("calc: 2+2", thread_id="probe-1", checkpointer=shared)
+    second = run_graph("calc: 3+3", thread_id="probe-1", checkpointer=shared)
+    assert first["answer"] != second["answer"]
+    assert "4" in first["answer"] and "6" in second["answer"]
+    checkpoints = list(shared.list({"configurable": {"thread_id": "probe-1"}}))
+    assert len(checkpoints) >= 2
 
 
 def test_exec_errors_are_data():
