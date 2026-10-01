@@ -38,7 +38,7 @@ Components:
 - [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
 - [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
 - [x] Resumable state evidence: `app/store.py` — every run saved as `runs/{id}.json`, `GET /run/{id}` reads from disk (proven by fresh-read test); `runs/` ignored. Postgres + Redis checkpoint is the documented next step
-- [ ] Budgets/circuit breaker evidence: `app/guards.py` exists (`MAX_STEPS 25`, `$0.50`), not wired yet (Step 6)
+- [x] Budgets/circuit breaker evidence: `POST /run` costs every attempt (search $0.01, exec $0.001 placeholder pricing), retries failing steps up to 3×, then `should_stop` trips with a `guard` trace entry stating step vs cost reason
 - [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
 - [ ] Eval + tracing evidence: `eval/scenarios.jsonl` 2 samples, 20-scenario table pending (Step 8)
 
@@ -62,6 +62,10 @@ Components:
    Cause: `hand_off` nests work under a `payload` key, but the summarizer read `tool`/`result`/`goal` at the top level. Producer and consumer disagreed on the envelope.
    Fix: Summarizer unwraps `handoff["payload"]` first (falling back to the dict itself). The handoff test caught it before any demo ran.
    Lesson: Every agent boundary gets a test asserting the real shape. In multi-agent systems the envelope is the API.
+5. Symptom: The guard test reported `cost budget reached ($0.03 >= $0.50)` — a budget trip that never happened.
+   Cause: `from app.guards import MAX_STEPS` binds the value at import time. The test patched `guards.MAX_STEPS` to 3, `should_stop` saw 3 and tripped correctly, but my reason-string check still read the stale 25 and blamed cost.
+   Fix: Read `guards.MAX_STEPS` live at check time. Same rule as the daemon threads: shared mutable config must be read, not copied.
+   Lesson: `from x import NAME` freezes values. Anything tests need to move — limits, flags, prices — must be read off the module each time.
 4. Symptom: Two old tests broke the moment the planner landed — `KeyError: 'tool'` on `trace[0]`.
    Cause: The trace contract grew a head. Plan entries sit first now, so `trace[0]` is intent, not action. The tests assumed positions instead of roles.
    Fix: Old shape tests now assert `trace[0]` is the plan and `trace[1]` is the first tool. New tests pin the planner: calc plans one exec step, search plans search+summarize, `and then` splits.

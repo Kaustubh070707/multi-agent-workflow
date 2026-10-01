@@ -100,6 +100,32 @@ def test_get_run_endpoint(tmp_path, monkeypatch):
     assert c.get("/run/does-not-exist").status_code == 404
 
 
+def test_guard_stops_error_loop(monkeypatch):
+    from app import guards, main
+
+    monkeypatch.setattr(guards, "MAX_STEPS", 3)
+    monkeypatch.setattr(main, "MAX_RETRIES", 10)
+    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": False, "error": "down"})
+
+    body = main.run(main.RunRequest(goal="Find something"))
+    assert body["status"] == "stopped"
+    reasons = [t for t in body["trace"] if t.get("kind") == "guard"]
+    assert reasons and "step" in reasons[0].get("reason", "")
+    attempts = [t for t in body["trace"] if "tool" in t]
+    assert len(attempts) <= 4
+
+
+def test_budget_stops_run(monkeypatch):
+    from app import main
+
+    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": False, "error": "down"})
+    monkeypatch.setattr(main, "COST_PER_SEARCH", 10.0)
+    body = main.run(main.RunRequest(goal="Find something"))
+    assert body["status"] == "stopped"
+    guard_reasons = [t.get("reason", "") for t in body["trace"] if t.get("kind") == "guard"]
+    assert any("cost" in r or "budget" in r for r in guard_reasons)
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 
