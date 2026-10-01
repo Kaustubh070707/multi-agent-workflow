@@ -39,7 +39,7 @@ Components:
 - [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
 - [x] Resumable state evidence: `app/store.py` — every run saved as `runs/{id}.json`, `GET /run/{id}` reads from disk (proven by fresh-read test); `runs/` ignored. Postgres + Redis checkpoint is the documented next step
 - [x] Budgets/circuit breaker evidence: `POST /run` costs every attempt (search $0.01, exec $0.001 placeholder pricing), retries failing steps up to 3×, then `should_stop` trips with a `guard` trace entry stating step vs cost reason
-- [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
+- [x] Human-in-loop evidence: `needs_approval` keyword gate (send/email/delete/publish/pay) — `POST /run` returns `awaiting_approval` with zero tool calls, `POST /approve` resumes; bad tokens 403
 - [ ] Eval + tracing evidence: `eval/scenarios.jsonl` 2 samples, 20-scenario table pending (Step 8)
 
 # 6. Numbers I measured
@@ -66,6 +66,10 @@ Components:
    Cause: `from app.guards import MAX_STEPS` binds the value at import time. The test patched `guards.MAX_STEPS` to 3, `should_stop` saw 3 and tripped correctly, but my reason-string check still read the stale 25 and blamed cost.
    Fix: Read `guards.MAX_STEPS` live at check time. Same rule as the daemon threads: shared mutable config must be read, not copied.
    Lesson: `from x import NAME` freezes values. Anything tests need to move — limits, flags, prices — must be read off the module each time.
+6. Decision, not a bug: the approval token *is* the pending run_id.
+   Cause: A separate token store would be a second source of truth to keep in sync. The run_id is already unguessable hex, already persisted, already unique.
+   Fix: `/approve` looks up the run_id and requires status `awaiting_approval`; anything else gets 403. Both paths share one `_execute`, so approved and direct runs behave identically — proven by the same assertions running against both.
+   Lesson: Reuse identity instead of inventing it. Every new ID scheme is a new thing to expire, revoke, and leak.
 4. Symptom: Two old tests broke the moment the planner landed — `KeyError: 'tool'` on `trace[0]`.
    Cause: The trace contract grew a head. Plan entries sit first now, so `trace[0]` is intent, not action. The tests assumed positions instead of roles.
    Fix: Old shape tests now assert `trace[0]` is the plan and `trace[1]` is the first tool. New tests pin the planner: calc plans one exec step, search plans search+summarize, `and then` splits.

@@ -23,6 +23,20 @@ class RunRequest(BaseModel):
     goal: str
 
 
+class ApproveRequest(BaseModel):
+    approval_token: str
+
+
+# Goals matching these words can change the world outside the logs.
+# They wait for a human before any tool runs.
+IRREVERSIBLE_KEYWORDS = ("send", "email", "delete", "publish", "pay")
+
+
+def needs_approval(goal: str) -> bool:
+    lowered = goal.lower()
+    return any(word in lowered for word in IRREVERSIBLE_KEYWORDS)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -36,11 +50,8 @@ def _guard_reason(steps: int, cost: float) -> str | None:
     return f"cost budget reached (${cost:.2f} >= ${MAX_COST_USD_PER_RUN:.2f})"
 
 
-@app.post("/run")
-def run(req: RunRequest):
-    # Step 6: plan first (logged), then researcher retries until success or guard trips.
-    # Errors are data, never raised. Every attempt is costed and counted.
-    goal = req.goal.strip()
+def _execute(goal: str) -> dict:
+    # Step 6+7 core: plan, guarded retries, handoff, summary. No persistence here.
     trace = [plan_entry(goal)]
     steps = 0
     cost = 0.0
@@ -50,10 +61,8 @@ def run(req: RunRequest):
         reason = _guard_reason(steps, cost)
         if reason is not None:
             trace.append({"kind": "guard", "reason": reason, "steps": steps, "cost_usd": round(cost, 4)})
-            body = {"goal": req.goal, "status": "stopped", "trace": trace,
+            return {"goal": goal, "status": "stopped", "trace": trace,
                     "answer": f"Stopped: {reason}."}
-            body["run_id"] = save_run(body)
-            return body
         tool, result = researcher(goal, exec_tool, search_tool)
         steps += 1
         cost += COST_PER_EXEC if tool == "exec" else COST_PER_SEARCH
@@ -69,8 +78,37 @@ def run(req: RunRequest):
     summary = summarizer(handoff)
     trace.append(summary)
     status = "done" if result.get("ok") else "error"
-    body = {"goal": req.goal, "status": status, "trace": trace, "answer": summary["answer"]}
+    return {"goal": goal, "status": status, "trace": trace, "answer": summary["answer"]}
+
+
+@app.post("/run")
+def run(req: RunRequest):
+    # Step 7: irreversible goals wait for a human before any tool runs.
+    goal = req.goal.strip()
+    if needs_approval(goal):
+        pending = {"goal": req.goal, "status": "awaiting_approval",
+                   "trace": [plan_entry(goal),
+                             {"kind": "approval",
+                              "reason": "goal looks irreversible — waiting for human approval"}]}
+        pending["run_id"] = save_run(pending)
+        pending["approval_token"] = pending["run_id"]
+        save_run(pending)
+        return pending
+    body = _execute(goal)
+    body["goal"] = req.goal
     body["run_id"] = save_run(body)
+    return body
+
+
+@app.post("/approve")
+def approve(req: ApproveRequest):
+    saved = load_run(req.approval_token)
+    if saved is None or saved.get("status") != "awaiting_approval":
+        raise HTTPException(status_code=403, detail="unknown or stale approval token")
+    body = _execute(saved["goal"])
+    body["run_id"] = saved["run_id"]
+    body["approved"] = True
+    save_run(body)
     return body
 
 

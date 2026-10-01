@@ -126,6 +126,43 @@ def test_budget_stops_run(monkeypatch):
     assert any("cost" in r or "budget" in r for r in guard_reasons)
 
 
+def test_approval_blocks_tool(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.main import app
+
+    calls = []
+    monkeypatch.setattr(main, "search_tool", lambda q: calls.append(q) or {"ok": True, "data": []})
+    c = TestClient(app)
+    body = c.post("/run", json={"goal": "send email report to team"}).json()
+    assert body["status"] == "awaiting_approval"
+    assert calls == []
+    assert "approval_token" in body
+
+
+def test_approve_resumes_run(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.main import app
+
+    monkeypatch.setattr(main, "search_tool", lambda q: {"ok": True, "data": [{"title": "t"}]})
+    c = TestClient(app)
+    pending = c.post("/run", json={"goal": "send email report to team"}).json()
+    done = c.post("/approve", json={"approval_token": pending["approval_token"]}).json()
+    assert done["status"] == "done"
+    assert done["trace"][0].get("kind") == "plan"
+    bad = c.post("/approve", json={"approval_token": "nope"})
+    assert bad.status_code in (403, 404)
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 
