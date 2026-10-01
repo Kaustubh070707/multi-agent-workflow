@@ -171,6 +171,24 @@ def test_researcher_follows_plan_first_step():
     assert "4" in body["answer"]
 
 
+def _infra_down(monkeypatch):
+    from app import state
+
+    monkeypatch.setattr(state, "_pg_ok", lambda: False)
+    monkeypatch.setattr(state, "_redis_ok", lambda: False)
+
+
+def test_state_falls_back_without_infra(monkeypatch):
+    _infra_down(monkeypatch)
+    from app import state
+
+    assert state.backend() == "file"
+    rid = state.save({"goal": "x", "status": "done"})
+    assert state.load(rid)["status"] == "done"
+    state.record_cost(rid, 0.01)
+    assert state.total_cost(rid) >= 0.01
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 

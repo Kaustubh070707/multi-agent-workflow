@@ -38,7 +38,7 @@ Components:
 - [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout, eval-first for expressions), both `{"ok":...}` errors-as-data, never raise
 - [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
 - [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
-- [x] Resumable state evidence: `app/store.py` — every run saved as `runs/{id}.json`, `GET /run/{id}` reads from disk (proven by fresh-read test); `runs/` ignored. Postgres + Redis checkpoint is the documented next step
+- [x] Resumable state evidence: `app/store.py` (file) + `app/state.py` (Postgres `runs` table + Redis cost ledger, file/memory fallback) — live `docker-compose.yml:1` verified `postgres+redis` round-trip; `runs/` ignored
 - [x] Budgets/circuit breaker evidence: `POST /run` costs every attempt (search $0.01, exec $0.001 placeholder pricing), retries failing steps up to 3×, then `should_stop` trips with a `guard` trace entry stating step vs cost reason
 - [x] Human-in-loop evidence: `needs_approval` keyword gate (send/email/delete/publish/pay) — `POST /run` returns `awaiting_approval` with zero tool calls, `POST /approve` resumes; bad tokens 403
 - [ ] Eval + tracing evidence: `eval/scenarios.jsonl` 2 samples, 20-scenario table pending (Step 8)
