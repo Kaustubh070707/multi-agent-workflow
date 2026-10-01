@@ -16,7 +16,8 @@ def test_run_search_shape():
     assert body["goal"] == "Find latest FastAPI release"
     assert body["status"] in ("done", "error")
     assert isinstance(body["trace"], list) and body["trace"]
-    assert body["trace"][0]["tool"] == "search"
+    assert body["trace"][0].get("kind") == "plan"
+    assert body["trace"][1]["tool"] == "search"
 
 
 def test_run_calc_shape():
@@ -24,8 +25,8 @@ def test_run_calc_shape():
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "done"
-    assert body["trace"][0]["tool"] == "exec"
-    assert "99" in str(body["trace"][0]["output"])
+    assert body["trace"][1]["tool"] == "exec"
+    assert "99" in str(body["trace"][1]["output"])
 
 
 def test_handoff_protocol_shape():
@@ -46,6 +47,25 @@ def test_summarizer_formats_answer():
     assert body["status"] == "done"
     assert "42" in body["answer"]
     assert body["trace"][-1]["kind"] == "summary"
+
+
+def test_plan_logged_before_execution():
+    from app.main import RunRequest, run
+
+    body = run(RunRequest(goal="calc: 6*7"))
+    assert body["trace"][0].get("kind") == "plan"
+    assert isinstance(body["trace"][0]["steps"], list) and body["trace"][0]["steps"]
+
+
+def test_planner_splits_steps():
+    from app.planner import plan
+
+    calc = plan("calc: 6*7")
+    assert len(calc) == 1 and calc[0]["tool"] == "exec"
+    search = plan("Find latest FastAPI release and summarize")
+    assert [s["tool"] for s in search] == ["search", "summarize"]
+    multi = plan("calc: 2+2 and then summarize")
+    assert len(multi) == 2
 
 
 def test_exec_errors_are_data():

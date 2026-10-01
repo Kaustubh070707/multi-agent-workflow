@@ -36,6 +36,7 @@ Components:
 - [x] Single agent + routing evidence: `app/main.py` `POST /run` — `calc:` goes to exec, everything else to search, every run returns a `trace`
 - [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout, eval-first for expressions), both `{"ok":...}` errors-as-data, never raise
 - [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
+- [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
 - [ ] Resumable state evidence: checkpoint config (Step 5)
 - [ ] Budgets/circuit breaker evidence: `app/guards.py` exists (`MAX_STEPS 25`, `$0.50`), not wired yet (Step 6)
 - [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
@@ -61,6 +62,10 @@ Components:
    Cause: `hand_off` nests work under a `payload` key, but the summarizer read `tool`/`result`/`goal` at the top level. Producer and consumer disagreed on the envelope.
    Fix: Summarizer unwraps `handoff["payload"]` first (falling back to the dict itself). The handoff test caught it before any demo ran.
    Lesson: Every agent boundary gets a test asserting the real shape. In multi-agent systems the envelope is the API.
+4. Symptom: Two old tests broke the moment the planner landed — `KeyError: 'tool'` on `trace[0]`.
+   Cause: The trace contract grew a head. Plan entries sit first now, so `trace[0]` is intent, not action. The tests assumed positions instead of roles.
+   Fix: Old shape tests now assert `trace[0]` is the plan and `trace[1]` is the first tool. New tests pin the planner: calc plans one exec step, search plans search+summarize, `and then` splits.
+   Lesson: When the trace gains a stage, update shape tests to name stages by kind, not index. Positions shift; roles don't.
 
 # 8. What I would do differently at 100x scale
 - TBD:
