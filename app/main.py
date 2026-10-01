@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from app.agents import hand_off, researcher, summarizer
 from app.planner import plan_entry
+from app.store import load_run, save_run
 from app.tools import exec_tool, search_tool
 
 app = FastAPI(title="Multi-Agent Workflow - D4")
@@ -30,4 +31,14 @@ def run(req: RunRequest):
     summary = summarizer(handoff)
     trace.append(summary)
     status = "done" if result.get("ok") else "error"
-    return {"goal": req.goal, "status": status, "trace": trace, "answer": summary["answer"]}
+    body = {"goal": req.goal, "status": status, "trace": trace, "answer": summary["answer"]}
+    body["run_id"] = save_run(body)
+    return body
+
+
+@app.get("/run/{run_id}")
+def get_run(run_id: str):
+    saved = load_run(run_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return saved

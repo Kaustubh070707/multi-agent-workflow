@@ -2,3 +2,5 @@ __pycache__/
 .venv/
 .env
 *.pyc
+# run store — local runtime state, never committed
+runs/

@@ -68,6 +68,38 @@ def test_planner_splits_steps():
     assert len(multi) == 2
 
 
+def test_run_persisted_and_resumable(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    from app.main import RunRequest, run
+    from app.store import load_run
+
+    body = run(RunRequest(goal="calc: 6*7"))
+    assert body.get("run_id")
+    # fresh read, as after a restart — no in-memory state involved
+    saved = load_run(body["run_id"])
+    assert saved["goal"] == "calc: 6*7"
+    assert saved["answer"] == body["answer"]
+    assert saved["trace"][0].get("kind") == "plan"
+
+
+def test_get_run_endpoint(tmp_path, monkeypatch):
+    from app import store
+
+    monkeypatch.setattr(store, "RUNS_DIR", tmp_path)
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    c = TestClient(app)
+    posted = c.post("/run", json={"goal": "calc: 2+2"}).json()
+    fetched = c.get(f"/run/{posted['run_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["answer"] == posted["answer"]
+    assert c.get("/run/does-not-exist").status_code == 404
+
+
 def test_exec_errors_are_data():
     from app.tools import exec_tool
 

@@ -37,7 +37,7 @@ Components:
 - [x] Typed tool-calling evidence: `app/tools.py` — `search_tool` (DDG + 5s pool timeout) and `exec_tool` (sandboxed builtins + 5s daemon-thread timeout, eval-first for expressions), both `{"ok":...}` errors-as-data, never raise
 - [x] Two-agent handoff evidence: `app/agents.py` — `researcher` works, `hand_off` moves the envelope explicitly, `summarizer` formats the final `answer`; mismatch caught by test before demo
 - [x] Planner evidence: `app/planner.py` — deterministic rules (`calc:` → exec, else search+summarize, splits on and/then), logged as first trace entry before any tool runs
-- [ ] Resumable state evidence: checkpoint config (Step 5)
+- [x] Resumable state evidence: `app/store.py` — every run saved as `runs/{id}.json`, `GET /run/{id}` reads from disk (proven by fresh-read test); `runs/` ignored. Postgres + Redis checkpoint is the documented next step
 - [ ] Budgets/circuit breaker evidence: `app/guards.py` exists (`MAX_STEPS 25`, `$0.50`), not wired yet (Step 6)
 - [ ] Human-in-loop evidence: approval gate endpoint (Step 7)
 - [ ] Eval + tracing evidence: `eval/scenarios.jsonl` 2 samples, 20-scenario table pending (Step 8)
