@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 # run store — local runtime state, never committed
 runs/
+# stray eval logs
+eval/*.txt

@@ -16,9 +16,12 @@
 ```bash
 pip install -r requirements-dev.txt
 cp .env.example .env
-ruff check app/ && pytest -q
+ruff check app/ tests/ eval/ && pytest -q   # 15 passed
 uvicorn app.main:app --reload
-# POST /run {"goal": "calc: 12*8+3"} -> done with 99; search goals call the web tool
+# POST /run {"goal": "calc: 12*8+3"} -> done with 99 + run_id
+# GET /run/{id} replays from disk (survives restart)
+# POST /approve {"approval_token": "<run_id>"} resumes gated goals (send/email/delete/publish/pay)
+# python eval/run_eval.py -> 20/20 (95% target beaten), avg $0.0072/run
 ```
 
 ## Eval
